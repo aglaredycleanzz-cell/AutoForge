@@ -36,36 +36,43 @@ jobs:
       - name: Build APK
         run: gradle --no-daemon :app:assembleDebug
 
-      - name: Validate APK archive and size
+      - name: Validate APK and prepare clear download package
         shell: bash
         run: |
           set -euo pipefail
           APK="app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
+          echo "APK file details:"
+          file "$APK"
           SIZE="$(stat -c%s "$APK")"
           echo "APK size: $SIZE bytes"
           test "$SIZE" -gt 20000
           unzip -t "$APK"
-
-      - name: Verify APK signature
-        run: "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Report Android package metadata
-        shell: bash
-        run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
           echo "Application ID:"
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$APK"
           echo "Minimum SDK:"
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest min-sdk "$APK"
           echo "Target SDK:"
           "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest target-sdk "$APK"
+          mkdir -p release-package
+          cp "$APK" release-package/AutoForge.apk
+          cat > release-package/READ-ME-FIRST.txt <<'EOF'
+          AUTOFORGE ANDROID TEST BUILD
+          
+          1. Extract this GitHub artifact ZIP first.
+          2. Install only the file named AutoForge.apk inside the extracted folder.
+          3. Do not rename the artifact ZIP to .apk.
+          4. If Android still reports "package parsing error", send the exact APK file size and your Android version.
+          
+          This is a debug/test build, not a Play Store release.
+          EOF
 
-      - name: Upload APK artifact
+      - name: Upload install package
         uses: actions/upload-artifact@v4
         with:
-          name: AutoForge-Android-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: AutoForge-Android-Install-Package
+          path: release-package/
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
