@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build and validate debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -22,16 +22,44 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
       - name: Build APK
-        run: gradle --no-daemon assembleDebug
+        run: gradle --no-daemon :app:assembleDebug
 
-      - name: Verify APK exists
-        run: test -s app/build/outputs/apk/debug/app-debug.apk
+      - name: Validate APK archive and size
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          SIZE="$(stat -c%s "$APK")"
+          echo "APK size: $SIZE bytes"
+          test "$SIZE" -gt 20000
+          unzip -t "$APK"
+
+      - name: Verify APK signature
+        run: "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Report Android package metadata
+        shell: bash
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          echo "Application ID:"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest application-id "$APK"
+          echo "Minimum SDK:"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest min-sdk "$APK"
+          echo "Target SDK:"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer" manifest target-sdk "$APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -40,3 +68,4 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+          compression-level: 0
